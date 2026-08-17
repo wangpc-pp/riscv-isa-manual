@@ -1,0 +1,91 @@
+---
+# yaml-language-server: $schema=../docs-resources/schemas/defs-schema.json
+
+$schema: "../docs-resources/schemas/defs-schema.json#"
+
+chapter_name: Vector Extension for Conflict Detection, Version 0.1
+
+normative_rule_definitions:
+
+  - name: Zvcd_dependent_Zve32x
+    tags: ["norm:Zvcd_dependent_Zve32x"]
+
+  - name: Zvcd_sew
+    tags: ["norm:Zvcd_sew"]
+
+  - name: Zvcd_bit_compare
+    tags: ["norm:Zvcd_bit_compare"]
+
+  - name: Zvcd_masked_off
+    tags: ["norm:Zvcd_masked_off"]
+
+  - name: Zvcd_vl0
+    tags: ["norm:Zvcd_vl0"]
+
+  - name: Zvcd_no_ffs
+    tags: ["norm:Zvcd_no_ffs"]
+
+  - name: vconflictcnt_sew_rsv
+    tags: ["norm:vconflictcnt_sew_rsv"]
+    kind: instruction
+    instance: vconflictcnt.v
+
+  - name: vconflictcnt_op
+    tags: ["norm:vconflictcnt_op"]
+    kind: instruction
+    instance: vconflictcnt.v
+
+  - name: vconflictcnt_groups
+    tags: ["norm:vconflictcnt_groups"]
+    kind: instruction
+    instance: vconflictcnt.v
+
+  - name: vconflictcnt_trap
+    tags: ["norm:vconflictcnt_trap"]
+    kind: instruction
+    instance: vconflictcnt.v
+
+  - name: vconflictcnt_vstart_n0_ill
+    tags: ["norm:vconflictcnt_vstart_n0_ill"]
+    kind: instruction
+    instance: vconflictcnt.v
+
+  - name: vconflictcnt_v0_constraint
+    tags: ["norm:vconflictcnt_v0_constraint"]
+    kind: instruction
+    instance: vconflictcnt.v
+
+  - name: vconflictlast_sew_rsv
+    tags: ["norm:vconflictlast_sew_rsv"]
+    kind: instruction
+    instance: vconflictlast.m
+
+  - name: vconflictlast_op
+    tags: ["norm:vconflictlast_op"]
+    kind: instruction
+    instance: vconflictlast.m
+
+  - name: vconflictlast_tail
+    tags: ["norm:vconflictlast_tail"]
+    kind: instruction
+    instance: vconflictlast.m
+
+  - name: vconflictlast_groups
+    tags: ["norm:vconflictlast_groups"]
+    kind: instruction
+    instance: vconflictlast.m
+
+  - name: vconflictlast_trap
+    tags: ["norm:vconflictlast_trap"]
+    kind: instruction
+    instance: vconflictlast.m
+
+  - name: vconflictlast_vstart_n0_ill
+    tags: ["norm:vconflictlast_vstart_n0_ill"]
+    kind: instruction
+    instance: vconflictlast.m
+
+  - name: vconflictlast_v0_constraint
+    tags: ["norm:vconflictlast_v0_constraint"]
+    kind: instruction
+    instance: vconflictlast.m

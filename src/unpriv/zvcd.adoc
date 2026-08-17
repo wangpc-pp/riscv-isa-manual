@@ -1,0 +1,214 @@
+[[ext:zvcd]]
+=== ext:zvcd[] Vector Extension for Conflict Detection, Version 0.1
+
+[NOTE]
+====
+This extension is an unratified draft. Instruction names, encodings, and
+behavior described in this chapter are subject to change. Final standard
+allocation requires coordination with the RISC-V Vector SIG/Task Group.
+====
+
+This extension provides cross-lane conflict-detection primitives on
+vector registers to support histogram update, deduplication, and similar
+parallel patterns that require equality-group information across active
+lanes. The two instructions defined herein operate entirely on vector
+registers; they perform no implicit memory access, gather, scatter, or
+reduction.
+
+[#norm:Zvcd_dependent_Zve32x]#ext:zvcd[] depends upon the ext:zve32x[] extension.#
+
+[#norm:Zvcd_sew]#Both instructions in ext:zvcd[] are defined only for SEW=32 and SEW=64. SEW=64 additionally requires 64-bit integer vector element support (e.g., ext:zve64x[]). Encodings at other SEW values are reserved and raise an illegal-instruction exception.#
+
+[#norm:Zvcd_bit_compare]#Elements of _vs2_ are compared as untyped SEW-width bit patterns. Signed and unsigned interpretations produce identical results. Floating-point NaN handling, rounding modes, and floating-point exceptions do not apply.#
+
+The common execution model follows base-V definitions of `vl`, VLMAX,
+body, active, inactive, tail, `vma`, and `vta` unless otherwise stated.
+For both instructions, define the per-lane active predicate `A(i)` for
+0 {le} i < vl:
+
+  A(i) = (vm == 1) OR (v0.mask[i] == 1)
+
+[#norm:Zvcd_masked_off]#A masked-off lane (where `A(i)` is false) is neither a query lane nor a matching candidate for any other lane. Tail lanes participate in no comparison.#
+
+[#norm:Zvcd_vl0]#When vl=0, neither instruction updates any destination element, including agnostic values.#
+
+[#norm:Zvcd_no_ffs]#Neither instruction accesses memory or modifies `fflags`, `vxrm`, or `vxsat`.#
+
+[[insns-vconflictcnt, Vector Conflict Count]]
+==== insn:vconflictcnt.v[]
+
+Synopsis::
+Return each active element's 1-based rank among equal-value active
+predecessors.
+
+Mnemonic::
+insn:vconflictcnt.v[vd,vs2,vm]
+
+Encoding::
+[wavedrom, , svg]
+....
+{reg:[
+{bits: 7, name: 'OP-V'},
+{bits: 5, name: 'vd'},
+{bits: 3, name: 'OPMVV'},
+{bits: 5, name: '10010'},
+{bits: 5, name: 'vs2'},
+{bits: 1, name: 'vm'},
+{bits: 6, name: '010100'},
+]}
+....
+
+Reserved Encodings::
+* [#norm:vconflictcnt_sew_rsv]#SEW is any value other than 32 or 64.#
+
+Arguments::
+
+[%autowidth]
+[%header,cols="4,2,2,2"]
+|===
+|Register
+|Direction
+|EEW
+|Definition
+
+| _vs2_ | input  | SEW | Source vector register group
+| _vd_  | output | SEW | Inclusive equal-prefix count
+|===
+
+Description::
+
+[#norm:vconflictcnt_op]#For each active element i, the result written to _vd_[i] is the number of active elements j in 0 {le} j {le} i whose SEW-width bit pattern equals _vs2_[i]. An active element always matches itself, so the result is at least 1. The count is written as an unsigned integer in the SEW-wide destination element. The architectural bound on VLMAX (VLEN/SEW), combined with the SEW restriction, guarantees that the result fits in a SEW-wide element.#
+
+Inactive elements (where A(i) is false) in the body are written according
+to the vtype.vma policy. Tail elements are written according to the
+vtype.vta policy.
+
+[#norm:vconflictcnt_groups]#The destination and source vector register groups both have EEW=SEW and EMUL=LMUL. The destination group MUST NOT overlap the source group.#
+
+Operation::
+[source,sail]
+--
+function clause execute (VCONFLICTCNT(vs2, vd, vm)) = {
+  assert(SEW == 32 | SEW == 64);
+  assert(vstart == 0);
+  foreach (i from 0 to vl-1) {
+    if (is_active(vm, i)) {
+      let count : int(SEW) = 0;
+      foreach (j from 0 to i) {
+        if (is_active(vm, j) & bit_equal(get_velem(vs2, j), get_velem(vs2, i))) {
+          count = count + 1;
+        }
+      }
+      set_velem(vd, i, count);
+    } else {
+      set_velem_inactive(vd, SEW, i);
+    }
+  }
+  if (vl > 0) {
+    set_tail_agnostic(vd, SEW, LMUL);
+  }
+  RETIRE_SUCCESS
+}
+--
+
+[#norm:vconflictcnt_trap]#Traps on insn:vconflictcnt.v[] are always reported with a csr:vstart[] of 0.#  [#norm:vconflictcnt_vstart_n0_ill]#An illegal-instruction exception is raised if csr:vstart[] is non-zero.#
+
+[#norm:vconflictcnt_v0_constraint]#In the masked form, neither the destination register group nor the source register group may contain `v0`.#
+
+----
+  vs2          = [7, 3, 7, 7, 3]     (vl=5, vm=1)
+  vconflictcnt = [1, 1, 2, 3, 2]
+
+  vs2          = [7, 3, 7, 7, 3]     (vl=5, mask 11101)
+  active       = [1, 1, 1, 0, 1]
+  vconflictcnt = [1, 1, 2, x, 2]     (x governed by vtype.vma)
+----
+
+[[insns-vconflictlast, Vector Conflict Last]]
+==== insn:vconflictlast.m[]
+
+Synopsis::
+Mark the highest-indexed element in every equal-value active group.
+
+Mnemonic::
+insn:vconflictlast.m[vd,vs2,vm]
+
+Encoding::
+[wavedrom, , svg]
+....
+{reg:[
+{bits: 7, name: 'OP-V'},
+{bits: 5, name: 'vd'},
+{bits: 3, name: 'OPMVV'},
+{bits: 5, name: '00100'},
+{bits: 5, name: 'vs2'},
+{bits: 1, name: 'vm'},
+{bits: 6, name: '010100'},
+]}
+....
+
+Reserved Encodings::
+* [#norm:vconflictlast_sew_rsv]#SEW is any value other than 32 or 64.#
+
+Arguments::
+
+[%autowidth]
+[%header,cols="4,2,2,2"]
+|===
+|Register
+|Direction
+|Type
+|Definition
+
+| _vs2_ | input  | SEW-wide vector group (EMUL=LMUL) | Source elements
+| _vd_  | output | Mask register (EEW=1, single register) | Last-of-group bits
+|===
+
+Description::
+
+[#norm:vconflictlast_op]#For each active element i, the destination mask bit at position i is 1 if no active element j with j > i has the same SEW-width bit pattern as _vs2_[i], and 0 otherwise. Every non-empty equal-value active group therefore produces exactly one set bit at the highest index in the group.#
+
+[#norm:vconflictlast_tail]#Mask tail bits (i {ge} vl) follow the base-V mask-tail-agnostic policy and MUST NOT be assumed by software to be zero. Masked-off body bits are governed by vtype.vma. An operation governed by the current vl, including insn:vmand.mm[], cannot canonicalize these tail bits; software must increase vl before explicitly initializing them as body elements.#
+
+[#norm:vconflictlast_groups]#The destination is a single mask register (EEW=1). The source vector register group has EEW=SEW, EMUL=LMUL. The destination register MUST NOT overlap any physical register in the source group.#
+
+Operation::
+[source,sail]
+--
+function clause execute (VCONFLICTLAST(vs2, vd, vm)) = {
+  assert(SEW == 32 | SEW == 64);
+  assert(vstart == 0);
+  foreach (i from 0 to vl-1) {
+    if (is_active(vm, i)) {
+      let has_later : bool = false;
+      foreach (j from i+1 to vl-1) {
+        if (is_active(vm, j) & bit_equal(get_velem(vs2, j), get_velem(vs2, i))) {
+          has_later = true;
+        }
+      }
+      set_mask_bit(vd, i, not(has_later));
+    } else {
+      set_mask_bit_inactive(vd, i);
+    }
+  }
+  if (vl > 0) {
+    set_mask_tail_agnostic(vd, vl);
+  }
+  RETIRE_SUCCESS
+}
+--
+
+[#norm:vconflictlast_trap]#Traps on insn:vconflictlast.m[] are always reported with a csr:vstart[] of 0.#  [#norm:vconflictlast_vstart_n0_ill]#An illegal-instruction exception is raised if csr:vstart[] is non-zero.#
+
+[#norm:vconflictlast_v0_constraint]#In the masked form, neither the destination register nor the source register group may contain `v0`.#
+
+----
+  vs2           = [7, 3, 7, 7, 3]    (vl=5, vm=1)
+  vconflictlast = [0, 0, 0, 1, 1]
+
+  vs2           = [7, 3, 7, 7, 3]    (vl=5, mask 11101)
+  active        = [1, 1, 1, 0, 1]
+  vconflictlast = [0, 0, 1, x, 1]    (x governed by vtype.vma)
+----
+
+//

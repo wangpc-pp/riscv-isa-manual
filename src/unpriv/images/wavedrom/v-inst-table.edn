@@ -203,6 +203,8 @@
 | 00001 | vmsbf
 | 00010 | vmsof
 | 00011 | vmsif
+| 00100 | vconflictlast (ext:zvcd[])
 | 10000 | viota
 | 10001 | vid
+| 10010 | vconflictcnt (ext:zvcd[])
 |===

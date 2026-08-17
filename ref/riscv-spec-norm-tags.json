@@ -1269,6 +1269,25 @@
     "norm:vclmul_op": "Each 64-bit element in the vs2 vector register is carry-less multiplied by\neither each 64-bit element in vs1 (vector-vector), or the 64-bit value\nfrom integer register rs1 (vector-scalar). The result is the least\nsignificant 64 bits of the carry-less product.",
     "norm:vclmulh_sewn64_rsv": "SEW is any value other than 64",
     "norm:vclmulh_op": "Each 64-bit element in the vs2 vector register is carry-less multiplied by\neither each 64-bit element in vs1 (vector-vector), or the 64-bit value\nfrom integer register rs1 (vector-scalar). The result is the most\nsignificant 64 bits of the carry-less product.",
+    "norm:Zvcd_dependent_Zve32x": "ext:zvcd[] depends upon the ext:zve32x[] extension.",
+    "norm:Zvcd_sew": "Both instructions in ext:zvcd[] are defined only for SEW=32 and SEW=64. SEW=64 additionally requires 64-bit integer vector element support (e.g., ext:zve64x[]). Encodings at other SEW values are reserved and raise an illegal-instruction exception.",
+    "norm:Zvcd_bit_compare": "Elements of vs2 are compared as untyped SEW-width bit patterns. Signed and unsigned interpretations produce identical results. Floating-point NaN handling, rounding modes, and floating-point exceptions do not apply.",
+    "norm:Zvcd_masked_off": "A masked-off lane (where A(i) is false) is neither a query lane nor a matching candidate for any other lane. Tail lanes participate in no comparison.",
+    "norm:Zvcd_vl0": "When vl=0, neither instruction updates any destination element, including agnostic values.",
+    "norm:Zvcd_no_ffs": "Neither instruction accesses memory or modifies fflags, vxrm, or vxsat.",
+    "norm:vconflictcnt_sew_rsv": "SEW is any value other than 32 or 64.",
+    "norm:vconflictcnt_op": "For each active element i, the result written to vd[i] is the number of active elements j in 0 {le} j {le} i whose SEW-width bit pattern equals vs2[i]. An active element always matches itself, so the result is at least 1. The count is written as an unsigned integer in the SEW-wide destination element. The architectural bound on VLMAX (VLEN/SEW), combined with the SEW restriction, guarantees that the result fits in a SEW-wide element.",
+    "norm:vconflictcnt_groups": "The destination and source vector register groups both have EEW=SEW and EMUL=LMUL. The destination group MUST NOT overlap the source group.",
+    "norm:vconflictcnt_trap": "Traps on insn:vconflictcnt.v[] are always reported with a csr:vstart[] of 0.",
+    "norm:vconflictcnt_vstart_n0_ill": "An illegal-instruction exception is raised if csr:vstart[] is non-zero.",
+    "norm:vconflictcnt_v0_constraint": "In the masked form, neither the destination register group nor the source register group may contain v0.",
+    "norm:vconflictlast_sew_rsv": "SEW is any value other than 32 or 64.",
+    "norm:vconflictlast_op": "For each active element i, the destination mask bit at position i is 1 if no active element j with j &gt; i has the same SEW-width bit pattern as vs2[i], and 0 otherwise. Every non-empty equal-value active group therefore produces exactly one set bit at the highest index in the group.",
+    "norm:vconflictlast_tail": "Mask tail bits (i {ge} vl) follow the base-V mask-tail-agnostic policy and MUST NOT be assumed by software to be zero. Masked-off body bits are governed by vtype.vma. An operation governed by the current vl, including insn:vmand.mm[], cannot canonicalize these tail bits; software must increase vl before explicitly initializing them as body elements.",
+    "norm:vconflictlast_groups": "The destination is a single mask register (EEW=1). The source vector register group has EEW=SEW, EMUL=LMUL. The destination register MUST NOT overlap any physical register in the source group.",
+    "norm:vconflictlast_trap": "Traps on insn:vconflictlast.m[] are always reported with a csr:vstart[] of 0.",
+    "norm:vconflictlast_vstart_n0_ill": "An illegal-instruction exception is raised if csr:vstart[] is non-zero.",
+    "norm:vconflictlast_v0_constraint": "In the masked form, neither the destination register nor the source register group may contain v0.",
     "norm:zk_scalar_xreg_op": "All instructions described herein use the general-purpose x\nregisters, and obey the 2-read-1-write register access constraint.",
     "norm:zknd_shared_instr": "The insn:aes64ks1i[] and insn:aes64ks2[] instructions\nare present in both the extlink:zknd[] and extlink:zkne[] extensions.",
     "norm:zkne_shared_instr": "The insn:aes64ks1i[] and insn:aes64ks2[] instructions\nare present in both the extlink:zknd[] and extlink:zkne[] extensions.",
@@ -7729,6 +7748,47 @@
                 "tags": [
                   "norm:Zvbc_dependent_Zve64x",
                   "norm:Zvbc_sew64only"
+                ]
+              },
+              {
+                "title": "ext:zvcd[] Vector Extension for Conflict Detection, Version 0.1",
+                "id": "ext:zvcd",
+                "children": [
+                  {
+                    "title": "insn:vconflictcnt.v[]",
+                    "id": "insns-vconflictcnt",
+                    "children": [],
+                    "tags": [
+                      "norm:vconflictcnt_sew_rsv",
+                      "norm:vconflictcnt_op",
+                      "norm:vconflictcnt_groups",
+                      "norm:vconflictcnt_trap",
+                      "norm:vconflictcnt_vstart_n0_ill",
+                      "norm:vconflictcnt_v0_constraint"
+                    ]
+                  },
+                  {
+                    "title": "insn:vconflictlast.m[]",
+                    "id": "insns-vconflictlast",
+                    "children": [],
+                    "tags": [
+                      "norm:vconflictlast_sew_rsv",
+                      "norm:vconflictlast_op",
+                      "norm:vconflictlast_tail",
+                      "norm:vconflictlast_groups",
+                      "norm:vconflictlast_trap",
+                      "norm:vconflictlast_vstart_n0_ill",
+                      "norm:vconflictlast_v0_constraint"
+                    ]
+                  }
+                ],
+                "tags": [
+                  "norm:Zvcd_dependent_Zve32x",
+                  "norm:Zvcd_sew",
+                  "norm:Zvcd_bit_compare",
+                  "norm:Zvcd_masked_off",
+                  "norm:Zvcd_vl0",
+                  "norm:Zvcd_no_ffs"
                 ]
               },
               {

@@ -1,0 +1,37 @@
+= Zvcd: RISC-V Vector Conflict Detection Extension
+:doctype: book
+:description: Zvcd Extension Specification
+:sectnums:
+:sectnumlevels: 4
+:sectlinks:
+:experimental:
+:icons: font
+:lang: en
+:example-caption: Example
+:listing-caption: Listing
+:imagesdir: ../docs-resources/images
+:imagesoutdir: build/images-out
+:bibtex-file: src/resources/riscv-spec.bib
+:bibtex-order: alphabetical
+:bibtex-style: apa
+:bibtex-format: asciidoc
+:bibtex-throw: false
+:revnumber: 0.1-draft-20260817
+:revremark: Draft Specification
+:toc: left
+:toclevels: 3
+:data-uri:
+:title-logo-image: image:risc-v_logo.png[RISC-V International Logo,pdfwidth=3.25in,align=center]
+:le: ≤
+:ge: ≥
+:times: ×
+
+[NOTE]
+====
+This document is a standalone rendering of the Zvcd extension
+specification (Version 0.1, draft 2026-08-17).
+Normative text is identified by inline `norm:` anchors.
+====
+
+:leveloffset: -1
+include::unpriv/zvcd.adoc[]
