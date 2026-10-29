@@ -16,21 +16,24 @@ vector mask instructions such as insn:vfirst.m[] and insn:vcompress.vm[].
 
 The insn:vmmatch.vx[] instruction interprets a general-purpose register as
 `XLEN/SEW` packed keys.
-The insn:vmmatch.vv[] instruction uses all `VLMAX` elements in a vector
-register group as keys.
+The insn:vmmatch.vs[] instruction uses one 128-bit scalar element group in
+a vector register group as `128/SEW` keys shared by all query elements.
 Neither instruction accesses memory or combines matching with first-index
 extraction.
 
-[#norm:Zvmatch_dependent_V]#The ext:zvmatch[] extension depends upon the
-ext:v[] extension.#
+[[norm:Zvmatch_dependent_Zve32x]]
+The ext:zvmatch[] extension depends upon the ext:zve32x[] extension.
 
 [#norm:Zvmatch_sew]#The instructions in ext:zvmatch[] are defined only for
 SEW=8 and SEW=16.#
 
-[#norm:Zvmatch_lmul]#Any LMUL that is legal under the base vector register-group
-rules is permitted.
-The _vs1_ and _vs2_ operands have EEW=SEW and EMUL=LMUL, and the _vd_
-operand is a mask register with EEW=1.#
+[[norm:Zvmatch_lmul]]
+Any LMUL that is legal under the base vector register-group rules is
+permitted for the instructions in ext:zvmatch[].
+The _vs2_ query operand has EEW=SEW and EMUL=LMUL, and the _vd_ operand is a
+mask register with EEW=1.
+For insn:vmmatch.vs[], the _vs1_ key operand has EEW=SEW and
+`EMUL=ceil(128/VLEN)`, independent of LMUL.
 
 [#norm:Zvmatch_bit_pattern]#The instructions compare SEW-bit patterns for
 equality.
@@ -112,16 +115,22 @@ for i from vstart to vl - 1:
                          vs2[i] == x[rs1][SEW*j +: SEW]
 ....
 
-[[insns-vmmatch-vv, Vector Match Against Vector Keys]]
-==== insn:vmmatch.vv[]
+[[insns-vmmatch-vs, Vector Match Against a 128-bit Scalar Key Group]]
+==== insn:vmmatch.vs[]
 
 Synopsis::
-Match each vector element against a complete vector key group
+Match each vector element against one shared 128-bit scalar key group
 
 Mnemonic::
-insn:vmmatch.vv[vd,vs2,vs1,vm]
+insn:vmmatch.vs[vd,vs2,vs1,vm]
 
-Encoding (Vector-Vector)::
+Encoding (Vector-Scalar Element Group)::
+[[norm:vmmatch-vs_enc]]
+The insn:vmmatch.vs[] instruction uses the OPIVV encoding with opcode
+`1010111`, funct3=`000`, and funct6=`110100`.
+The _vs1_ field selects the lowest-numbered vector register containing the
+scalar key group.
+
 [wavedrom, , svg]
 ....
 {reg:[
@@ -136,67 +145,154 @@ Encoding (Vector-Vector)::
 ....
 
 Reserved Encodings::
-* [#norm:vmmatch-vv_sew_rsv]#SEW is any value other than 8 or 16#
+* [#norm:vmmatch-vs_sew_rsv]#For insn:vmmatch.vs[], SEW values other than 8
+or 16 are reserved.#
+* [#norm:vmmatch-vs_key_alignment_rsv]#For insn:vmmatch.vs[], an encoding
+in which _vs1_ is not a multiple of `KEY_EMUL=ceil(128/VLEN)` is reserved.#
 
 Arguments::
 
 [%autowidth]
-[%header,cols="4,2,2,4"]
+[%header,cols="4,2,2,2,2,4"]
 |===
 |Register
 |Direction
+|EGW
+|EGS
 |EEW
 |Definition
 
-| _vs1_ | input  | SEW | Key elements
-| _vs2_ | input  | SEW | Query elements
-| _vd_  | output | 1   | Match result mask
+| _vs1_ | input  | 128 | 128/SEW | SEW | One scalar key group
+| _vs2_ | input  | SEW | 1       | SEW | Query elements
+| _vd_  | output | 1   | 1       | 1   | Match result mask bits
 |===
 
 Description::
-`VLMAX` is derived from the current SEW and LMUL settings in csr:vtype[].
+[[norm:vmmatch-vs_element_groups]]
+For insn:vmmatch.vs[], _vs1_ supplies a single scalar element group with
+EGW=128, EEW=SEW, and `EGS=KEYS=128/SEW`, using the terminology in
+<<vector-element-groups>>.
+The scalar key group contains 16 keys for SEW=8 or 8 keys for SEW=16 and is
+shared by all query elements.
+The _vs2_ query operand and _vd_ result operand have EGS=1.
+Each active query produces one destination mask bit at the same element index.
 
-[#norm:vmmatch-vv_key_domain]#The key domain is every element
-`vs1[j]`, for `0 <= j < VLMAX`.
-The key domain always begins at element zero and is not shortened by csr:vl[],
-csr:vstart[], or the execution mask.#
+[[norm:vmmatch-vs_key_register]]
+For insn:vmmatch.vs[], the scalar key group occupies the low 128 bits of the
+vector register group beginning at _vs1_, with `KEY_EMUL=ceil(128/VLEN)`.
+This group consists of KEY_EMUL consecutive vector registers; the
+lowest-numbered register holds the least-significant bits of the scalar
+key group.
+The _vs1_ register number must be aligned to KEY_EMUL, independently of
+the query operand's LMUL.
+When VLEN is greater than 128, bits above bit 127 of _vs1_ are ignored.
+The key operand's capacity is independent of the query operand's VLMAX;
+`KEYS > VLMAX` and `LMUL*VLEN < 128` are permitted when the query vector
+configuration is otherwise legal.
 
-[#norm:vmmatch-vv_op]#For each active element `i`, destination mask bit
-`vd.mask[i]` is set if the query element `vs2[i]` equals any element in the
-complete key domain `vs1[0:VLMAX)`, and is cleared otherwise.#
+[%autowidth]
+[%header,cols="2,2,3,4"]
+|===
+|VLEN |KEY_EMUL |Key registers |Alignment of _vs1_
 
-[#norm:vmmatch-vv_all_keys]#Elements in `vs1[vl:VLMAX)` are source-key data,
-not destination tail elements, and participate in every active comparison.
-Software must initialize all `VLMAX` key elements.
-If the logical key set contains fewer than `VLMAX` values, software must fill
-every remaining key element by duplicating any valid key from the logical key
-set.#
+|32   |4 | _vs1_ through _vs1_+3 | Multiple of 4
+|64   |2 | _vs1_ through _vs1_+1 | Multiple of 2
+|{ge}128 |1 | _vs1_ only        | Any register number
+|===
 
-[#norm:vmmatch-vv_no_empty_set]#The instruction has no encoding for an empty
+[NOTE]
+====
+The scalar key group uses the same register-group sizing as the Vector
+Crypto scalar element groups described in
+<<crypto-vector-instruction-constraints>>.
+The ext:zve32x[] dependency guarantees VLEN is at least 32, so the complete
+128-bit key group occupies at most four registers.
+Increasing LMUL increases the query capacity without increasing the key
+operand's size or register count.
+====
+
+[[norm:vmmatch-vs_element_execution]]
+For insn:vmmatch.vs[], csr:vl[] and csr:vstart[] count individual query
+elements and need not be multiples of the scalar key group's EGS.
+The scalar key group imposes no additional alignment or minimum-length
+requirement on the query operand.
+The instruction processes query elements from csr:vstart[] through
+csr:vl[]-1, subject to the base vector rules.
+Masking is applied separately to each query element and its destination mask
+bit.
+
+[[norm:vmmatch-vs_key_domain]]
+For insn:vmmatch.vs[], every active query uses the same `KEYS=128/SEW`
+key elements `vs1[j]`, for `0 <= j < KEYS`.
+Key `j` is the SEW-bit field beginning at bit offset `(j*SEW) % VLEN` in
+register `vs1 + floor(j*SEW/VLEN)`.
+All KEYS positions participate, independently of LMUL, csr:vl[], csr:vstart[],
+and the execution mask, including when a key index is at or above the query
+operand's VLMAX.
+
+[[norm:vmmatch-vs_op]]
+For each active element `i`, insn:vmmatch.vs[] sets
+destination mask bit `vd.mask[i]` if the query element `vs2[i]` equals any
+key in the single 128-bit scalar element group in _vs1_, and clears it
+otherwise.
+
+[[norm:vmmatch-vs_all_keys]]
+For insn:vmmatch.vs[], software must initialize all `KEYS=128/SEW` key
+elements in the scalar key group before executing an instruction with any
+active queries.
+If the logical key set contains fewer than KEYS values, software must fill
+every remaining key position by duplicating any valid key from that logical
 key set.
-Every legal csr:vtype[] setting has `VLMAX >= 1`, and setting csr:vl[] to zero
-does not make the key domain empty.#
+
+[#norm:vmmatch-vs_no_empty_set]#The insn:vmmatch.vs[] instruction has no
+encoding for an empty scalar key set.
+Setting csr:vl[] to zero processes no query elements.#
+
+[NOTE]
+====
+With VLEN=128, SEW=8, and LMUL=4, _vs2_ can contain 64 queries, all of which
+use the same 16 keys in the single _vs1_ register.
+With SEW=16 and LMUL=1/2 on the same implementation, _vs2_ can contain four
+queries, each of which uses all eight keys in _vs1_.
+With VLEN=32, SEW=8, and LMUL=1, the four queries in _vs2_ use all 16 keys
+in the four-register key group.
+The key register group can be initialized once and reused across query batches
+with different LMUL and csr:vl[] settings at the same SEW.
+====
 
 Operation::
 [source]
 ....
+KEYS = 128 / SEW
+KEY_EMUL = ceil(128 / VLEN)
+if vs1 % KEY_EMUL != 0:
+    raise illegal-instruction exception
+
+function key(j):
+    reg = vs1 + floor(j * SEW / VLEN)
+    offset = (j * SEW) % VLEN
+    return v[reg][offset +: SEW]
+
 for i from vstart to vl - 1:
     if vm == 1 or v0.mask[i] == 1:
-        vd.mask[i] = OR over j in [0, VLMAX):
-                         vs2[i] == vs1[j]
+        vd.mask[i] = OR over j in [0, KEYS):
+                         vs2[i] == key(j)
 ....
 
 ==== Vector Execution Semantics
 
-[#norm:vmmatch_execution]#For both instructions, csr:vl[], csr:vstart[], and
-the execution mask control the query elements and destination mask bits only.
+[[norm:vmmatch_execution]]
+For both instructions, csr:vl[] and csr:vstart[]
+select the query elements and destination mask bits to process.
+The execution mask controls individual query elements and destination mask
+bits, without excluding any keys from an active query's key domain.
 Prestart destination bits remain undisturbed.
 When `vm=0`, inactive destination bits follow the mask policy selected by
 csr::[vma], except that a legal overlap between _vd_ and _vs2_ makes the
 instruction mask-agnostic under the base vector overlap rules.
 Destination tail bits follow the base vector mask-destination tail-agnostic
 rule, irrespective of csr::[vta].
-Normal completion writes zero to csr:vstart[].#
+Normal completion writes zero to csr:vstart[].
 
 [#norm:vmmatch_no_empty_set]#Software must not use either instruction to
 represent an empty logical key set.#
@@ -204,10 +300,10 @@ represent an empty logical key set.#
 [NOTE]
 ====
 An unmasked empty-set result can be produced with insn:vmclr.m[].
-For a nonempty logical key set larger than `SLOTS` or `VLMAX`, software can
-execute multiple match instructions and combine their result masks using
-insn:vmor.mm[].
-Each instruction must still receive a completely filled key domain.
+For a nonempty logical key set larger than `SLOTS` for insn:vmmatch.vx[] or
+`KEYS=128/SEW` for insn:vmmatch.vs[], software can execute multiple match
+instructions and combine their result masks using insn:vmor.mm[].
+Each active query must still receive a completely filled key domain.
 ====
 
 ==== Register Overlap
@@ -218,13 +314,15 @@ When masked execution is enabled, an encoding in which the _vs2_ register
 group contains `v0` is reserved.
 The destination mask register may be `v0`.#
 
-[#norm:vmmatch-vv_overlap]#For insn:vmmatch.vv[], _vd_ must not overlap _vs1_.
+[[norm:vmmatch-vs_overlap]]
+For insn:vmmatch.vs[], _vd_ must not overlap any register in the
+KEY_EMUL-register key group beginning at _vs1_.
 The _vd_ register may overlap _vs2_ only when _vd_ is the lowest-numbered
 register in the _vs2_ register group.
-When masked execution is enabled, an encoding in which either the _vs1_ or
-_vs2_ register group contains `v0` is reserved.
-The destination mask register may be `v0`, and the _vs1_ and _vs2_ register
-groups may overlap each other.#
+When masked execution is enabled, an encoding in which the _vs1_ key register
+group or the _vs2_ query register group contains `v0` is reserved.
+The destination mask register may be `v0`, and the key and query register
+groups may overlap each other, subject to these restrictions.
 
 ==== Exceptions and Restart
 
@@ -235,11 +333,13 @@ An attempt to execute either instruction with disabled vector state,
 csr::[vill]=1, a reserved SEW, an illegal register group, or a reserved overlap
 raises an illegal-instruction exception.#
 
-[#norm:vmmatch_restart]#An active result depends only on its query element, the
-complete key domain of the instruction, and its execution-mask bit.
+[#norm:vmmatch_restart]#An active result depends only on its query element,
+its key domain, and its execution-mask bit.
 There is no architectural state shared between destination elements.
-Restart behavior follows the base vector rules; csr:vstart[] skips destination
-elements only and does not shorten the insn:vmmatch.vv[] key domain.#
+Restart behavior follows the base vector rules.
+For insn:vmmatch.vs[], csr:vstart[] skips earlier query elements without
+excluding any keys in the scalar key group;
+no additional element-group alignment is required for restart.#
 
 [NOTE]
 ====
@@ -260,6 +360,25 @@ li          t0, 0x0d0a09200d0a0920
 vsetvli     t1, a2, e8, m1, ta, ma
 vle8.v      v8, (a0)
 vmmatch.vx  v1, v8, t0
+vfirst.m    a3, v1
+--
+
+The following example uses insn:vmmatch.vs[] to match a query vector with
+LMUL=1 against a single 128-bit key group beginning at `v4`.
+Register `a1` points to 16 byte keys, with unused positions filled by
+duplicating valid keys; `a0` points to query bytes and `a2` holds the query
+count.
+The key load uses LMUL=4 so that all 16 keys can be loaded even when VLEN=32.
+The example reserves `v4` through `v7` for this load; insn:vmmatch.vs[] reads
+only the KEY_EMUL registers containing the 128-bit scalar key group.
+
+[source,asm]
+--
+vsetivli    zero, 16, e8, m4, ta, ma
+vle8.v      v4, (a1)
+vsetvli     t1, a2, e8, m1, ta, ma
+vle8.v      v8, (a0)
+vmmatch.vs  v1, v8, v4
 vfirst.m    a3, v1
 --
 
