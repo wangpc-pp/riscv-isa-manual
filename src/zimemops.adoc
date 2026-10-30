@@ -1,0 +1,18 @@
+= Zimemops Bulk Memory Operations
+:doctype: book
+:description: Zimemops bulk memory operations specification proposal
+:revnumber: 0.1
+:revremark: Unratified draft
+:sectnums:
+:toc: left
+:toclevels: 3
+:source-highlighter: rouge
+:icons: font
+:experimental:
+:reproducible:
+:data-uri:
+:imagesdir: ../build/zimemops-images
+:diagram-format: svg
+
+include::symbols.adoc[]
+include::unpriv/zimemops.adoc[leveloffset=-1]

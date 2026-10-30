@@ -1,0 +1,391 @@
+[[ext:zimemops]]
+=== ext:zimemops[] Extension for Bulk Memory Operations, Version 0.1
+
+This section describes version 0.1 of the ext:zimemops[] extension,
+which provides restartable byte copy, move, and fill instructions.
+
+NOTE: This is an unratified draft. The extension name and encodings are
+provisional.
+
+[[norm:Zimemops_base_isa]]
+The Zimemops extension is defined for RV32I and RV64I. A hart implementing
+Zimemops shall implement insn:mcopy[], insn:mmove[], and insn:mset[], using
+its XLEN for address and length operands.
+
+[[norm:Zimemops_architectural_state]]
+The Zimemops extension adds no registers or CSRs. A partially completed
+instruction can restart on any hart supporting the same version at the
+same XLEN using its integer-register operands, saved instruction address,
+and ordinary execution context, without implementation-private state.
+
+[%header,cols="^1,^1,3,6"]
+|===
+|RV32 |RV64 |Mnemonic |Operation
+
+|{check} |{check} |mcopy (_rd_), (_rs1_), _rs2_
+|Forward byte copy for non-overlapping ranges
+
+|{check} |{check} |mmove (_rd_), (_rs1_), _rs2_
+|Byte move supporting overlapping ranges
+
+|{check} |{check} |mset (_rd_), _rs1_, _rs2_
+|Byte fill using the least significant byte of _rs1_
+|===
+
+==== Operands
+
+Parentheses in the assembly syntax identify address operands. The _rd_
+operand holds the destination address and is read-write.
+
+[%header,cols="1,3,3,3"]
+|===
+|Operand |insn:mcopy[] |insn:mmove[] |insn:mset[]
+
+|_rd_ |Destination cursor, read-write
+|Destination cursor or low-address base, read-write
+|Destination cursor, read-write
+
+|_rs1_ |Source cursor, read-write
+|Source cursor or low-address base, read-write
+|Fill value, read-only
+
+|_rs2_ |Remaining byte count, read-write
+|Remaining byte count, read-write
+|Remaining byte count, read-write
+|===
+
+[[norm:mcopy_mmove_registers_rsv]]
+For insn:mcopy[] and insn:mmove[], _rd_, _rs1_, and _rs2_ shall name
+nonzero, pairwise distinct integer registers. Other operand combinations
+are reserved.
+
+[[norm:mset_registers_rsv]]
+For insn:mset[], _rd_ and _rs2_ shall name distinct nonzero integer
+registers, and _rs1_ shall differ from both. The fill operand _rs1_ may
+be `x0`. Other operand combinations are reserved.
+
+[[norm:mcopy_mmove_mset_registers_exception]]
+A reserved register combination in insn:mcopy[], insn:mmove[], or
+insn:mset[] raises an illegal-instruction exception before any data
+memory access or integer-register modification, including when the
+byte count is zero.
+
+[[norm:mcopy_mmove_mset_length]]
+The insn:mcopy[], insn:mmove[], and insn:mset[] instructions interpret
+`X[rs2]` as an unsigned XLEN-bit byte count.
+
+[[norm:mcopy_mmove_mset_zero_length]]
+A valid insn:mcopy[], insn:mmove[], or insn:mset[] instruction with
+`X[rs2]` equal to zero performs no data memory accesses or
+operand-address validation, modifies no integer registers, and
+completes normally.
+
+[[norm:mcopy_mmove_mset_other_registers]]
+The insn:mcopy[], insn:mmove[], and insn:mset[] instructions modify only
+their specified read-write integer-register operands.
+
+==== Instruction Format
+
+The instructions use the following 32-bit R-type field layout.
+
+[wavedrom, , svg]
+....
+{reg:[
+    { bits: 7, name: 0x0f, attr: ['MISC-MEM'] },
+    { bits: 5, name: 'rd', attr: ['destination'] },
+    { bits: 3, name: 0x3, attr: ['Zimemops'] },
+    { bits: 5, name: 'rs1', attr: ['source / value'] },
+    { bits: 5, name: 'rs2', attr: ['remaining bytes'] },
+    { bits: 7, name: 'funct7', attr: ['operation'] },
+]}
+....
+
+==== Instructions
+
+[[insn:mcopy]]
+===== insn:mcopy[]
+
+Synopsis::
+Copies bytes in the forward direction.
+
+Mnemonic::
+mcopy (_rd_), (_rs1_), _rs2_
+
+Encoding::
+[[norm:mcopy_enc]]
+The insn:mcopy[] instruction uses the 32-bit R-type layout with opcode
+`0001111`, funct3 `011`, and funct7 `0000000`.
+
+Description::
+[[norm:mcopy_op]]
+The insn:mcopy[] instruction copies `X[rs2]` bytes from the source
+address in `X[rs1]` to the destination address in `X[rd]`, in increasing
+address order. On normal completion, it increments `X[rd]` and `X[rs1]`
+by the input byte count and writes zero to `X[rs2]`.
+
+[[norm:mcopy_overlap]]
+Software shall use insn:mcopy[] only for non-overlapping source and
+destination ranges. For overlapping inputs, the destination data result
+is unspecified, but the memory-access and progress requirements still
+apply. Overlap detection is not required.
+
+[[insn:mmove]]
+===== insn:mmove[]
+
+Synopsis::
+Moves bytes between possibly overlapping ranges.
+
+Mnemonic::
+mmove (_rd_), (_rs1_), _rs2_
+
+Encoding::
+[[norm:mmove_enc]]
+The insn:mmove[] instruction uses the 32-bit R-type layout with opcode
+`0001111`, funct3 `011`, and funct7 `0000011`.
+
+Description::
+[[norm:mmove_op]]
+The insn:mmove[] instruction moves `X[rs2]` bytes from the source address
+in `X[rs1]` to the destination address in `X[rd]`. It processes bytes in
+increasing address order when unsigned `X[rd]` is less than or equal to
+unsigned `X[rs1]`, and in decreasing address order otherwise. This rule
+applies to both overlapping and non-overlapping ranges. Without
+interference with source data, the result equals a copy of the source
+bytes as they were before the move began.
+
+[[norm:mmove_forward_result]]
+On normal completion of a forward insn:mmove[], `X[rd]` and `X[rs1]`
+are incremented by the input byte count, and `X[rs2]` is set to zero.
+
+[[norm:mmove_backward_result]]
+A backward insn:mmove[] uses `X[rd]` and `X[rs1]` as the low-address
+bases of the remaining ranges. On normal completion, these registers
+are unchanged and `X[rs2]` is set to zero.
+
+[[norm:mmove_equal_addresses]]
+An insn:mmove[] with equal source and destination addresses and a
+nonzero byte count performs the accesses and permission checks of a
+forward move; equal addresses do not suppress access exceptions.
+
+[[insn:mset]]
+===== insn:mset[]
+
+Synopsis::
+Fills bytes using the least significant byte of _rs1_.
+
+Mnemonic::
+mset (_rd_), _rs1_, _rs2_
+
+Encoding::
+[[norm:mset_enc]]
+The insn:mset[] instruction uses the 32-bit R-type layout with opcode
+`0001111`, funct3 `011`, and funct7 `0000110`.
+
+Description::
+[[norm:mset_op]]
+The insn:mset[] instruction fills `X[rs2]` bytes starting at the
+destination address in `X[rd]` with `X[rs1][7:0]`, in increasing address
+order. On normal completion, it increments `X[rd]` by the input byte
+count, writes zero to `X[rs2]`, and leaves `X[rs1]` unchanged. Bits of
+`X[rs1]` above bit 7 are ignored.
+
+==== Memory Accesses
+
+[[norm:mcopy_mmove_mset_address_arithmetic]]
+For insn:mcopy[], insn:mmove[], and insn:mset[], address comparisons are
+unsigned and address updates use XLEN-bit arithmetic. Software shall
+supply ranges whose exclusive end does not wrap: _D_ + _R_ < 2^XLEN^,
+and, for insn:mcopy[] and insn:mmove[], _S_ + _R_ < 2^XLEN^, where _D_,
+_S_, and _R_ are the input destination address, source address, and byte
+count. For wrapping inputs, data results and progress are unspecified;
+translation, protection, and memory-attribute restrictions still apply.
+
+[[norm:mcopy_mmove_mset_byte_alignment]]
+The insn:mcopy[], insn:mmove[], and insn:mset[] instructions support
+arbitrary byte addresses in supported memory and do not raise
+address-misaligned exceptions due to internal transfer alignment.
+
+[[norm:mcopy_mmove_mset_access_checks]]
+Each access generated by insn:mcopy[], insn:mmove[], or insn:mset[] obeys
+the translation, privilege, endianness, access-permission, PMP, PMA, and
+virtualization rules for an ordinary byte load or store in the current
+execution context.
+
+[[norm:mcopy_mmove_mset_supported_memory]]
+The insn:mcopy[], insn:mmove[], and insn:mset[] instructions support
+regular main memory with idempotent reads and writes. An attempted
+access to an unsupported region raises a load or store access-fault
+exception without performing that access. Earlier completed bytes
+remain committed according to the progress rules.
+
+[[norm:mcopy_mmove_mset_access_bounds]]
+For valid non-wrapping inputs, insn:mcopy[] and insn:mmove[] read only
+within [_S_, _S_ + _R_) and write only within [_D_, _D_ + _R_);
+insn:mset[] writes only within [_D_, _D_ + _R_), where _S_, _D_, and
+_R_ are the input source address, destination address, and byte count.
+Internal transfer widening or prefetching shall not introduce
+architecturally visible accesses, side effects, or synchronous
+exceptions outside these ranges.
+
+[[norm:mcopy_mmove_mset_speculation]]
+Speculative reads by insn:mcopy[], insn:mmove[], or insn:mset[] follow
+the permissions and PMAs for ordinary loads from idempotent memory.
+Discarded reads do not affect architectural results or progress and do
+not introduce traps; uncommitted stores do not survive a trap or squash.
+
+==== Traps and Restart
+
+[[norm:mcopy_mmove_mset_completed_byte]]
+For insn:mcopy[], insn:mmove[], and insn:mset[], a byte is completed only
+when its destination store has committed successfully. A source read
+without a successful destination store does not advance progress and
+may be repeated after restart.
+
+[[norm:mcopy_mmove_mset_forward_progress]]
+If insn:mcopy[], insn:mset[], or a forward insn:mmove[] stops after
+completing _K_ bytes, `X[rd]` is _D_ + _K_ and `X[rs2]` is _R_ - _K_.
+For insn:mcopy[] and forward insn:mmove[], `X[rs1]` is _S_ + _K_;
+for insn:mset[], it is unchanged. Committed destination stores cover
+exactly [_D_, _D_ + _K_). Here _D_, _S_, and _R_ are the input
+destination address, source address, and byte count of this invocation,
+and 0 {le} _K_ {le} _R_.
+
+[[norm:mmove_backward_progress]]
+If a backward insn:mmove[] stops after completing _K_ bytes, `X[rd]`
+is _D_, `X[rs1]` is _S_, and `X[rs2]` is _R_ - _K_. Committed
+destination stores cover exactly [_D_ + _R_ - _K_, _D_ + _R_).
+Here _D_, _S_, and _R_ are the input destination base, source base,
+and byte count of this invocation, and 0 {le} _K_ {le} _R_.
+
+[[norm:mcopy_mmove_mset_consistent_stop]]
+At a trap or debug stop of insn:mcopy[], insn:mmove[], or insn:mset[],
+the operand registers and committed destination stores shall reflect
+one consistent completed-byte count. Program-order-younger instructions
+shall not contribute effects to this stopped state.
+
+[[norm:mcopy_mmove_mset_store_commit]]
+Committed stores of insn:mcopy[], insn:mmove[], and insn:mset[] remain
+part of the architectural execution after a trap. Commitment does not
+require immediate visibility to other harts; propagation and ordering
+follow the memory model.
+
+[[norm:mcopy_mmove_replay_safety]]
+Committed stores of a valid insn:mcopy[] or insn:mmove[] shall not
+destroy source data needed for unfinished bytes. Every exposed progress
+point shall permit restarting the remaining operation without buffered
+data retained across the trap.
+
+[[norm:mcopy_mmove_mset_fault_order]]
+A synchronous data-access exception from insn:mcopy[], insn:mmove[], or
+insn:mset[] identifies the first byte that cannot complete in the
+specified processing order; all earlier bytes have completed. For
+insn:mcopy[] and insn:mmove[], the source read precedes its destination
+store, and a failing source read produces no store for that byte.
+No later destination store may have committed at the fault.
+
+[[norm:mcopy_mmove_mset_fault_cause]]
+A source-read failure of insn:mcopy[] or insn:mmove[] raises the
+exception applicable to an ordinary byte load. A destination-write
+failure of insn:mcopy[], insn:mmove[], or insn:mset[] raises the
+exception applicable to an ordinary byte store.
+
+[[norm:mcopy_mmove_mset_trap_address]]
+If an insn:mcopy[], insn:mmove[], or insn:mset[] exception reports a
+fault address in csr:mtval[], csr:stval[], or csr:vstval[], the address
+identifies the faulting source or destination byte. Whether an address
+is reported, and any supplemental guest-physical address information,
+follow the privileged architecture.
+
+[[norm:mcopy_mmove_mset_restart_pc]]
+If insn:mcopy[], insn:mmove[], or insn:mset[] stops before normal
+completion, the saved exception or debug PC identifies that instruction.
+Re-execution with the exposed operands processes only the remaining
+bytes; completed bytes are not reprocessed.
+
+[[norm:mcopy_mmove_mset_interrupt_progress]]
+The insn:mcopy[], insn:mmove[], and insn:mset[] instructions provide
+internal progress points for recognizing eligible interrupts. The
+maximum amount of completed work between recognition opportunities
+shall be finite and independent of the input count. Interrupts and
+debug stops expose the same progress state as synchronous exceptions.
+
+[[norm:mcopy_mmove_mset_instret]]
+A normally completed insn:mcopy[], insn:mmove[], or insn:mset[] counts
+as one retired instruction, including for zero length. Partial
+completion followed by a trap does not retire the instruction;
+internal transfers are not separately retired instructions.
+
+==== Memory Ordering
+
+[[norm:mcopy_mmove_mset_rvwmo_primitives]]
+For memory-model purposes, each byte transferred by insn:mcopy[] or
+insn:mmove[] produces an ordinary byte load _L~i~_ and store _W~i~_;
+each byte filled by insn:mset[] produces an ordinary byte store _W~i~_.
+Each byte operation is single-copy atomic.
+
+[[norm:mcopy_mmove_mset_rvwmo_program_order]]
+The program-order expansion of insn:mcopy[] and insn:mmove[] is
+_L~0~_, _W~0~_, _L~1~_, _W~1~_, and so on, in byte-processing order;
+that of insn:mset[] is _W~0~_, _W~1~_, and so on. All these operations
+follow the memory operations of preceding instructions and precede
+those of following instructions in program order. RVWMO
+preserved-program-order rules determine their global ordering.
+
+[[norm:mcopy_mmove_rvwmo_dataflow]]
+Each insn:mcopy[] or insn:mmove[] store _W~i~_ writes the byte returned
+by its corresponding load _L~i~_ and has a syntactic data dependency on
+that load. Buffering and transfer merging preserve this dependency and
+applicable overlapping-address ordering.
+
+[[norm:mcopy_mmove_mset_rvwmo_dependencies]]
+For insn:mcopy[], insn:mmove[], and insn:mset[], forward source addresses
+depend on _rs1_, forward destination addresses on _rd_, and backward
+insn:mmove[] addresses additionally on _rs2_. insn:mset[] store data depends
+on _rs1_. The remaining-count condition creates a syntactic control
+dependency from _rs2_ to the stores; the insn:mmove[] direction condition
+additionally creates such a dependency from _rd_ and _rs1_, as if the
+conditions were branches in the memory-operation expansion.
+
+[[norm:mcopy_mmove_mset_result_dependencies]]
+For RVWMO, insn:mcopy[] and insn:mmove[] carry a dependency from each
+of _rd_, _rs1_, and _rs2_ to each address operand they write.
+insn:mset[] carries a dependency from _rd_ and _rs2_ to _rd_ and
+preserves the incoming _rs1_ dependency because it does not write that
+register. No dependency is carried to the normally completed constant-zero
+_rs2_ result. Transferred bytes do not determine address or count results.
+
+[[norm:mcopy_mmove_mset_rvwmo_fences]]
+All loads and stores of insn:mcopy[], insn:mmove[], and insn:mset[]
+participate in RVWMO, including the ordering effects of surrounding
+FENCE and acquire/release operations. For FENCE predecessor and
+successor sets, source loads are memory reads and destination stores
+are memory writes. Zimemops adds no implicit fence, acquire, release,
+or relaxation of RVWMO.
+
+[[norm:mcopy_mmove_mset_ztso]]
+On a hart implementing Ztso, every load and store generated by
+insn:mcopy[], insn:mmove[], or insn:mset[] also obeys Ztso.
+
+[[norm:mcopy_mmove_mset_range_atomicity]]
+The insn:mcopy[], insn:mmove[], and insn:mset[] instructions do not
+guarantee atomicity of the complete operation or of an insn:mcopy[]
+or insn:mmove[] load/store pair. Other harts may observe partial
+destination updates, and the instructions do not provide a coherent
+snapshot of concurrently modified source bytes.
+
+==== Usage Example
+
+A library routine can preserve the original destination in `a0` by
+using a separate cursor:
+
+[source,asm]
+----
+# a0 = destination, a1 = source, a2 = byte count
+memcpy_zimemops:
+    mv      t0, a0
+    mcopy   (t0), (a1), a2
+    ret
+
+# t0 = destination cursor, t1 = byte count
+    mset    (t0), x0, t1     # zero fill
+----
