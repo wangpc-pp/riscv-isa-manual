@@ -1,0 +1,109 @@
+[[ext:zibs]]
+=== ext:zibs[] Extension for Single-Bit Conditional Branches
+
+This section describes version 0.1 of the ext:zibs[] extension, which adds
+conditional branch instructions that test a single bit of an integer register.
+
+[NOTE]
+====
+The instruction encodings in this version are provisional.
+====
+
+[[norm:Zibs_insns_tbl]]
+.Zibs instructions
+[%header,cols="^1,^1,4,8"]
+|===
+|RV32
+|RV64
+|Mnemonic
+|Instruction
+
+|{check}
+|{check}
+|insn:bbclri[rs1,shamt,offset]
+|<<#insns-bbclri>>
+
+|{check}
+|{check}
+|insn:bbseti[rs1,shamt,offset]
+|<<#insns-bbseti>>
+
+|===
+
+==== Encoding
+
+[[norm:bbclri_bbseti_enc]]
+The insn:bbclri[] and insn:bbseti[] instructions have opcode `1100111`.
+Instruction bit 14 is 1, bit 13 encodes _shamt[5]_, and bit 12 is 0 for
+insn:bbclri[] and 1 for insn:bbseti[].
+Instruction bits 24:20 encode _shamt[4:0]_, bits 19:15 encode _rs1_, and
+bits 31, 30:25, 11:8, and 7 encode B-immediate bits 12, 10:5, 4:1, and 11,
+respectively.
+
+.Zibs instruction encoding
+[wavedrom, ,svg]
+....
+{reg: [
+  {bits: 7, name: 0x67,            attr: ['JALR']},
+  {bits: 5, name: 'imm[4:1|11]',   attr: ['offset[4:1|11]']},
+  {bits: 1, name: 'C',             attr: ['BBCLRI:0', 'BBSETI:1']},
+  {bits: 1, name: 'shamt[5]'},
+  {bits: 1, name: 1},
+  {bits: 5, name: 'rs1',           attr: ['src']},
+  {bits: 5, name: 'shamt[4:0]',    attr: ['bit index']},
+  {bits: 7, name: 'imm[12|10:5]',  attr: ['offset[12|10:5]']},
+]}
+....
+
+[[norm:bbclri_bbseti_target]]
+The 12-bit B-immediate encodes a signed offset in multiples of two bytes.
+The offset is sign-extended and added to the address of the branch instruction
+to obtain the target address, giving a range of -4096 to +4094 bytes.
+
+[[norm:bbclri_bbseti_shamt]]
+The 6-bit _shamt_ field specifies the bit index, with index 0 selecting the
+least-significant bit of _rs1_.
+
+[[norm:bbclri_bbseti_shamt_rv32_rsv]]
+For RV32, encodings with _shamt[5]_=1 are reserved.
+
+[[norm:bbclri_bbseti_misaligned_exception]]
+The insn:bbclri[] and insn:bbseti[] instructions generate an
+instruction-address-misaligned exception only when the branch is taken and the
+target address is not IALIGN-bit aligned.
+
+==== Instructions
+
+[#insns-bbclri,reftext="Branch if Bit Clear (Immediate)"]
+===== insn:bbclri[]
+
+Synopsis::
+Branch if Bit Clear (Immediate)
+
+Mnemonic::
+bbclri _rs1_, _shamt_, _offset_
+
+Description::
+[[norm:bbclri_op]]
+The insn:bbclri[] instruction takes the branch if bit _shamt_ of the value in
+integer register _rs1_ is zero. Otherwise, execution continues at the next
+sequential instruction.
+
+Included in: ext:zibs[]
+
+[#insns-bbseti,reftext="Branch if Bit Set (Immediate)"]
+===== insn:bbseti[]
+
+Synopsis::
+Branch if Bit Set (Immediate)
+
+Mnemonic::
+bbseti _rs1_, _shamt_, _offset_
+
+Description::
+[[norm:bbseti_op]]
+The insn:bbseti[] instruction takes the branch if bit _shamt_ of the value in
+integer register _rs1_ is one. Otherwise, execution continues at the next
+sequential instruction.
+
+Included in: ext:zibs[]
